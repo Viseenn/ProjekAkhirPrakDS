@@ -1,0 +1,93 @@
+---
+title: "ProjectPrakDS"
+author: "Visen"
+date: "2022-11-12"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Project Praktikum Data Science
+
+Library
+```{r}
+library(xml2)
+library(dplyr)
+library(dslabs)
+library(tidyverse)
+library(rvest)
+```
+
+Web
+```{r pressure, echo=FALSE}
+website <- read_html("https://www.tripadvisor.co.id/Attraction_Review-g294230-d1125234-Reviews-Merapi_Volcano-Yogyakarta_Region_Java.html")
+```
+
+Judul review
+```{r}
+judulreview <- html_nodes(website,'.biGQs._P.fiohW.qWPrE.ncFvv.fOtGX a span') 
+juduldata <- html_text(judulreview)
+juduldata <- as.character(juduldata)
+head(juduldata)
+```
+
+Review
+```{r}
+review <- html_nodes(website,'.fIrGe._T.bgMZj .biGQs._P.pZUbB.KxBGd span') 
+data_review<- html_text(review)
+data_review <- as.character(data_review)
+head(data_review)
+```
+
+Rating
+```{r}
+rating <- html_nodes(website,'.LbPSX .UctUV.d.H0')
+head(rating)
+data_rating <- gsub("\\D+", "", rating) #hanya digit
+data_rating <- substr(data_rating, 13, 13)
+data_rating <- as.numeric(data_rating)
+head(data_rating)
+```
+
+Data frame gabungan
+```{r}
+datareviews <- data.frame(judul = juduldata, review = data_review, rating = data_rating)
+str(datareviews)
+```
+
+Proses mengambil data sebanyak 910 data (or10)
+```{r}
+jumlah = 910
+if(jumlah > 10){
+  if(jumlah %% 10 !=0){ 
+    banyak_data = jumlah + (10 - (jumlah %% 10)) - 10
+  } else{
+    banyak_data = jumlah - 10
+  }
+  for (i in seq(from <- 850, to <- banyak_data, by = 10)){
+      url = paste0("https://www.tripadvisor.co.id/Attraction_Review-g294230-d1125234-Reviews-or",i,"-Merapi_Volcano-Yogyakarta_Region_Java.html")
+      page = read_html(url)
+      
+      judul_data <- page %>% html_nodes('.biGQs._P.fiohW.qWPrE.ncFvv.fOtGX a span') %>% html_text() 
+      judul_data <- as.character(judul_data)
+      
+      datareview <- page %>% html_nodes('.fIrGe._T.bgMZj .biGQs._P.pZUbB.KxBGd span') %>% html_text() 
+      datasreview <- as.character(datareview)
+      
+      datarating <- page %>% html_nodes('.LbPSX .UctUV.d.H0')
+      dataratings <- gsub("\\D+", "", datarating) 
+      data_ratingg <- dataratings %>% substr(13, 13) %>% as.numeric()
+      
+      datareviews <- rbind(datareviews, data.frame(judul = judul_data, review = datasreview, rating = data_ratingg))
+  }
+}
+``` 
+
+CSV
+```{r}
+str(datareviews)
+tail(datareviews)
+write.csv(datareviews ,"DataReview_WisataGunungMerapi.csv",row.names = F, fileEncoding = "UTF-8")
+```

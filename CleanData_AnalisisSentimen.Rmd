@@ -1,0 +1,226 @@
+---
+title: "CleanData_SentimenAnalisis"
+author: "Visen"
+date: "2022-11-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Library
+```{r}
+library(tidyverse)
+library(tidytext)
+library(vroom)
+library(here)
+```
+
+```{r}
+databeforeclean <- vroom(here("DataReview_WisataGunungMerapi.csv"))
+glimpse(databeforeclean)
+```
+
+Cleaned Data
+```{r}
+#hapus duplicate
+datanoduplicate <- databeforeclean[!duplicated(databeforeclean), ]
+tidyReview <- datanoduplicate$review
+tidyReview <- tolower(tidyReview)
+tidyReview <- gsub("[[:punct:]]","", tidyReview)
+tidyReview <- gsub("\\d+","", tidyReview)
+tidyData <- datanoduplicate %>%
+  select(judul, rating) %>%
+  mutate(review = tidyReview)
+head(tidyData)
+
+write.csv(tidyData, file = "DataClean.csv")
+```
+
+Clean data
+```{r}
+stopwords <- read.table(file = "C:/Users/Lenovo/Documents/stopwords-id.txt", header = FALSE)
+colnames(stopwords) <- c("word")
+banyakdata <- NULL #contoh buat klo slider ga di geser
+if(is.null(banyakdata)){
+  banyak_data <- nrow(tidyData)
+} else {
+  banyak_data <- banyakdata
+}
+tidy_review <- tidyData[c(1:banyak_data), ] %>%
+  filter(review != "nan") %>%
+  unnest_tokens(word, review) %>%
+  anti_join(stopwords, tidyData, by = NULL)
+
+glimpse(tidy_review)
+```
+
+
+Sentiment analisis
+Library
+```{r}
+library(e1071)
+library(caret)
+library(syuzhet)
+library(tidymodels)
+library(tidytext)
+library(RTextTools)
+library(tm)
+library(RColorBrewer)
+library(wordcloud)
+library(RSentiment)
+```
+
+Menggunakan get_nrc full review
+```{r}
+datafull <- read.csv("DataClean.csv", stringsAsFactors = FALSE)
+datachar <- as.character(datafull$review)
+datasen <- get_nrc_sentiment(datachar)
+combine <- cbind(datachar, datasen)
+write.csv(combine, "DataSentimenNRCFull.csv")
+
+par(mar=rep(3,4))
+a <- barplot(colSums(datasen), col=rainbow(10), ylab='count',main="Analisis Sentimen")
+```
+
+NRC per kata
+```{r}
+dataword <- tidy_review$word
+sentimen <- get_nrc_sentiment(dataword)
+
+nrc_data <- cbind(dataword, sentimen)
+glimpse(nrc_data)
+write.csv(nrc_data, "DataSentimenNRC.csv")
+
+par(mar=rep(3,4))
+a <- barplot(colSums(sentimen), col=rainbow(10), ylab='count',main="Analisis Sentimen")
+```
+
+Naive Bayes
+```{r}
+datanya <- read.csv("DataClean.csv")
+glimpse(datanya)
+
+datanya <- datanya %>% select(review, rating)
+
+#Kelas Baru Positif dan Negatif
+datanya <- datanya %>% mutate(kelas = ifelse(rating>=3, "Positif", "Negatif"))
+
+#Mengubah rating dan kelas menjadi faktor
+datanya$rating <- as.factor(datanya$rating)
+datanya$kelas <- as.factor(datanya$kelas)
+
+set.seed(20)
+datanya <- datanya[sample(nrow(datanya)),]
+datanya <- datanya[sample(nrow(datanya)),]
+glimpse(datanya)
+```
+
+```{r}
+#Mengubah ke bentuk corpus
+corpus <- Corpus(VectorSource(datanya$review))
+corpus
+inspect(corpus[1:10])
+
+corpus_clean <- corpus %>%
+    tm_map(content_transformer(tolower)) %>%
+    tm_map(removePunctuation) %>%
+    tm_map(removeNumbers) %>%
+    tm_map(removeWords, StopwordID) %>%
+    tm_map(stripWhitespace)
+
+#mengubah corpus jadi dtm
+dtm <- DocumentTermMatrix(corpus_clean)
+inspect(dtm[1:10, 1:20])
+```
+
+Training 80%
+```{r}
+data_split <- initial_split(datanya)
+data_split
+
+data_train <- datanya[1:682,]
+data_test <- datanya[683:910,]
+
+dtm_train <- dtm[1:682,]
+dtm_test <- dtm[683:910,]
+
+#cc = corpus clean
+cc_train <- corpus_clean[1:682]
+cc_test <- corpus_clean[683:910]
+```
+
+```{r}
+dim(dtm_train)
+dim(dtm_test)
+
+#seleksi fitur, ambil kata min 110 kali
+frequensi <- findFreqTerms(dtm_train,110)
+length(frequensi)
+saveRDS(frequensi, "fitur.rds")
+
+#penyesuaian fitur pada data train test dengan fitur yang sudah diseleksi
+dtm_train_a <- cc_train %>%
+  DocumentTermMatrix(control = list(dictionary = frequensi))
+dtm_test_a <- cc_test %>%
+  DocumentTermMatrix(control = list(dictionary = frequensi))
+dim(dtm_train_a)
+dim(dtm_test_a)
+```
+
+```{r}
+#Convert jumlah kemunculan
+convert <- function(x) {
+  y <- ifelse(x>0, 1, 0)
+  y <- factor(y, levels = c(0,1), labels = c("Negatif","Positif"))
+  y
+}
+
+#Apply convert untuk testing training
+train_b <- apply(dtm_train_a, 2, convert)
+test_b <- apply(dtm_test_a, 2, convert)
+glimpse(train_b)
+
+#Wordcloud
+wordcloud(corpus_clean, min.freq=2, max.words=200, random.order=F, colors=brewer.pal(8, "Dark2"))
+
+```
+
+Pemodelan Naive bayes dengan menggunakan RATING sebagai acuan
+```{r}
+# membuat model naive bayes
+classifier <- naiveBayes(train_b, data_train$rating, laplace = 1)
+
+# menyimpan model untuk aplikasi
+save(classifier, file = "NaiveBayesClassifierRating.rda")
+
+# test model naive bayes
+prediksi <- predict(classifier, test_b)
+
+# membuat tabel hasil prediksi
+table("Prediksi" = prediksi, "Asli" = data_test$rating)
+
+# mengecek akurasi
+conf <- confusionMatrix(prediksi, data_test$rating)
+conf$overall['Accuracy']
+```
+
+Pemodelan Naive bayes dengan menggunakan Kelas sebagai acuan
+```{r}
+# membuat model naive bayes
+classifier2 <- naiveBayes(train_b, data_train$kelas, laplace = 1)
+
+# menyimpan model untuk aplikasi
+save(classifier2, file = "NaiveBayesClassifierKelas.rda")
+
+# test model naive bayes
+prediksi2 <- predict(classifier2, test_b)
+
+# membuat tabel hasil prediksi
+table("Prediksi" = prediksi2, "Asli" = data_test$kelas)
+
+# mengecek akurasi
+conf2 <- confusionMatrix(prediksi2, data_test$kelas)
+conf2$overall['Accuracy']
+```

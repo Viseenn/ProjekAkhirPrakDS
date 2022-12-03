@@ -1,0 +1,186 @@
+---
+title: "Shiny"
+author: "Visen"
+date: "2022-11-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load library
+library(shiny)
+library(shinycssloaders)
+library(here)
+library(vroom)
+library(wordcloud2)
+library(ggplot2)
+library(shinydashboard)
+library(DT)
+library(tidytext)
+library(dplyr)
+```
+
+```{r}
+fileClassifier <- load("NaiveBayesClassifierKelas.rda")
+GunungMerapi <- vroom(here("DataClean.csv"))
+
+source("FiturEx.R")
+
+ui <- dashboardPage(
+  
+  dashboardHeader(title = "Gunung Merapi"),
+  
+  dashboardSidebar(
+    fluidPage(
+      hr(),
+      helpText(
+        "Proyek Akhir Praktikum Data Science IF-B "
+      ),
+      hr(),
+      helpText(
+        "Kelompok 11 : Visen (123200129) dan M Fawwaz Firjatullah (123200149)"
+      ),
+    )
+  ),
+  
+  dashboardBody(
+    tags$head(tags$style(HTML('
+      .skin-blue .main-sidebar {
+          background-color: #0C71E0;
+      }
+      
+      .skin-blue .main-sidebar .help-block{
+          background-color: #0C71E0;
+          color: #ffffff;
+      }
+      
+      .skin-blue .main-header .navbar {
+          background-color: #0C71E0;
+      }
+    
+      .skin-blue .main-header .logo {
+            background-color: #0859C6;
+      }'))
+    ),
+    fluidRow(
+      valueBoxOutput("totalreview"),
+      valueBoxOutput("positifreview"),
+      valueBoxOutput("negatifreview")
+    ),
+    fluidRow(
+      box(
+        title = "Data Review dan Klasifikasi Sentimen",
+        solidHeader = T,
+        width = 12,
+        collapsible = T,
+        div(DT::dataTableOutput("table_review") %>% withSpinner(color="#1167b1"), style = "font-size: 70%;")
+      ),
+    ),
+    fluidRow(
+      box(title = "Wordcloud",
+          solidHeader = T,
+          width = 6,
+          collapsible = T,
+          wordcloud2Output("wordcloud") %>% withSpinner(color="#0C71E0")
+      ),
+      box(title = "Word Count",
+          solidHeader = T,
+          width = 6,
+          collapsible = T,
+          plotOutput("word_count") %>% withSpinner(color = "#0C71E0")
+      )
+    ),
+    fluidRow(
+      box(title = "Analisis Sentimen NRC",
+          solidHeader = T,
+          width = 12,
+          collapsible = T,
+          plotOutput("analisisentimen") %>% withSpinner(color="#0C71E0")
+      )
+    )
+  ),
+)
+
+server <- function(input, output) {
+  #Masukan Data
+  data <- reactive(
+    GunungMerapi
+  )
+  #Data disimpan ke dataNB
+  dataNB <- reactive({
+    reviews <- data()$review
+    withProgress({
+      setProgress(message = "Ekstrak Fitur...")
+      newData <- extract_feature(reviews)
+    })
+    withProgress({
+      setProgress(message = "Klasifikasi Sentiment...")
+      pred <- predict(get(fileClassifier), newData)
+    })
+    #data disimpan satu frame
+    data.frame(Judul = data()$judul, Review = data()$review, Rating = data()$rating,  Sentimen = as.factor(pred), stringsAsFactors = FALSE)
+  })
+  
+  dataWord <- reactive({
+    v <- sort(colSums(as.matrix(create_dtm(data()$review))), decreasing = TRUE)
+    data.frame(Kata=names(v), Jumlah=as.integer(v), row.names=NULL, stringsAsFactors = FALSE) %>%
+      filter(Jumlah > 0)
+  })
+  output$table_review <- renderDataTable(datatable({
+    dataNB()
+  }))
+  
+  output$totalreview <- renderValueBox({
+    valueBox(
+      "Total", 
+      paste0(nrow(dataNB()), " review"),
+      icon = icon("pen"),
+      color = "purple"
+    )
+  })
+  
+  output$positifreview <- renderValueBox({
+    valueBox(
+      "Positif", 
+      paste0(nrow(dataNB() %>% filter(Sentimen == "Positif")), " review positif"),
+      icon = icon("smile"),
+      color = "teal")
+  })
+  
+  output$negatifreview <- renderValueBox({
+    valueBox(
+      "Negatif",
+      paste0(nrow(dataNB() %>% filter(Sentimen == "Negatif")), " review negatif"), 
+      icon = icon("frown"),
+      color = "maroon")
+  })
+  
+  output$wordcloud <- renderWordcloud2({
+    wordcloud2(dataWord(), size = 0.5, shape = 'circle')
+  })
+  
+  output$word_count <- renderPlot({
+    countedWord <- dataWord() %>%
+      top_n(10, Jumlah) %>%
+      mutate(Kata = reorder(Kata, Jumlah))
+    
+    ggplot(countedWord, aes(Kata, Jumlah, fill = -Jumlah)) +
+      geom_col() +
+      guides(fill = FALSE) +
+      theme_minimal()+
+      labs(x = NULL, y = "Jumlah Kata") +
+      coord_flip()
+  })
+  
+  output$analisisentimen<-renderPlot({
+    combine <- cbind(GunungMerapi$review, datasen)
+    par(mar=rep(3,4))
+    
+    barplot(colSums(datasen), col=rainbow(10), ylab='count',main="Kamus NRC")})
+}
+
+shinyApp(ui, server)
+```
