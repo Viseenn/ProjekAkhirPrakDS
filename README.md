@@ -1,5 +1,5 @@
 # ProjekAkhirPrakDS
 Judul : ANALISIS SENTIMEN REVIEW OBJEK WISATA GUNUNG MERAPI BERDASARKAN ULASAN PADA TRIPADVISOR <br>
-<ul> Anggota Kelompok : <br>
+Anggota Kelompok : <br>
 1. Visen (123200129) <br>
 2. M Fawwaz Firjatullah (123200148)
